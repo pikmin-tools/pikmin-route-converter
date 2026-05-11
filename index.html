@@ -3,38 +3,93 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>種花路線座標轉換器</title>
+    <title>種花路線座標轉換器 (視覺化地圖版)</title>
+    
+    <!-- Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- Leaflet CSS & JS (用於地圖) -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+    
+    <!-- SortableJS (用於拖曳排序) -->
+    <script src="https://cdn.jsdelivr.net/npm/sortablejs@latest/Sortable.min.js"></script>
+
     <style>
         /* 自訂捲軸樣式 */
         ::-webkit-scrollbar { width: 8px; height: 8px; }
         ::-webkit-scrollbar-track { background: #f1f1f1; border-radius: 4px; }
         ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
         ::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+        
+        /* 拖曳清單的樣式 */
+        .sortable-ghost { opacity: 0.4; background-color: #e0e7ff; }
+        .sortable-drag { cursor: grabbing !important; }
+        
+        /* 地圖標籤樣式 */
+        .custom-div-icon {
+            background-color: #4f46e5;
+            color: white;
+            border-radius: 50%;
+            text-align: center;
+            font-weight: bold;
+            font-size: 12px;
+            line-height: 24px;
+            border: 2px solid white;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.3);
+        }
     </style>
 </head>
 <body class="bg-slate-50 min-h-screen text-slate-800 font-sans p-4 md:p-8">
 
-    <div class="max-w-5xl mx-auto space-y-6">
+    <div class="max-w-6xl mx-auto space-y-6">
         <!-- 標題區塊 -->
-        <div class="bg-white p-6 rounded-2xl shadow-sm border border-slate-100">
-            <h1 class="text-2xl font-bold flex items-center gap-2 text-indigo-600">
-                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/><circle cx="12" cy="10" r="3"/></svg>
-                種花路線座標轉換器
-            </h1>
-            <p class="text-slate-500 mt-2 text-sm">輸入中心點座標，自動產生半徑 30m 的繞圈八角形路線，並輸出純座標文字。</p>
+        <div class="bg-white p-6 rounded-2xl shadow-sm border border-slate-100 flex justify-between items-center flex-wrap gap-4">
+            <div>
+                <h1 class="text-2xl font-bold flex items-center gap-2 text-indigo-600">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/><circle cx="12" cy="10" r="3"/></svg>
+                    種花路線座標轉換器 <span class="text-sm font-normal text-slate-400 ml-2">PRO</span>
+                </h1>
+                <p class="text-slate-500 mt-2 text-sm">輸入中心點座標，即時預覽路線並產出種花八角形座標。</p>
+            </div>
+            <div class="flex gap-2">
+                <button onclick="changeMapLayer('google_streets')" class="text-xs px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg transition">Google 街道圖</button>
+                <button onclick="changeMapLayer('google_satellite')" class="text-xs px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg transition">Google 衛星圖</button>
+            </div>
+        </div>
+
+        <!-- 地圖預覽區 (滿版) -->
+        <div class="bg-white p-2 rounded-2xl shadow-sm border border-slate-100 relative">
+            <div id="map" class="w-full h-[400px] rounded-xl z-0"></div>
         </div>
 
         <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
             <!-- 左側：輸入區 -->
             <div class="bg-white p-6 rounded-2xl shadow-sm border border-slate-100 flex flex-col h-full">
-                <label class="font-semibold text-slate-700 mb-3 flex justify-between items-center">
-                    <span>📍 輸入中心點座標</span>
-                    <span class="text-xs font-normal text-slate-400">支援逗號、空格或 Tab 分隔</span>
-                </label>
-                <textarea id="input-coords" class="w-full flex-grow min-h-[300px] p-4 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent font-mono text-sm resize-none" placeholder="例如：&#10;23.963509, 121.598653&#10;23.962394, 121.598788&#10;23.961857, 121.598571">23.963509, 121.598653
+                
+                <div class="flex justify-between items-center mb-4">
+                    <label class="font-semibold text-slate-700 flex items-center gap-2">
+                        <span>📍 輸入中心點座標</span>
+                    </label>
+                    <!-- 切換輸入模式的 Tabs -->
+                    <div class="flex bg-slate-100 p-1 rounded-lg">
+                        <button id="tab-text" onclick="switchInputMode('text')" class="px-3 py-1 text-sm font-medium rounded-md bg-white shadow-sm text-indigo-600 transition">文字貼上</button>
+                        <button id="tab-list" onclick="switchInputMode('list')" class="px-3 py-1 text-sm font-medium rounded-md text-slate-500 hover:text-slate-700 transition">拖曳排序</button>
+                    </div>
+                </div>
+
+                <!-- 純文字輸入框 -->
+                <textarea id="input-coords" class="w-full flex-grow min-h-[250px] p-4 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent font-mono text-sm resize-none" placeholder="例如：&#10;23.963509, 121.598653&#10;23.962394, 121.598788&#10;23.961857, 121.598571">23.963509, 121.598653
 23.962394, 121.598788
 23.961857, 121.598571</textarea>
+
+                <!-- 拖曳排序清單 (預設隱藏) -->
+                <div id="list-container" class="w-full flex-grow min-h-[250px] max-h-[300px] overflow-y-auto hidden bg-slate-50 border border-slate-200 rounded-xl p-2">
+                    <ul id="sortable-list" class="space-y-2">
+                        <!-- JS 會自動產生清單項目 -->
+                    </ul>
+                    <p id="empty-list-msg" class="text-center text-slate-400 text-sm mt-4 hidden">請先在「文字貼上」模式輸入座標</p>
+                </div>
                 
                 <div class="mt-4 p-4 bg-indigo-50 rounded-xl border border-indigo-100 space-y-3">
                     <div class="flex items-center justify-between">
@@ -42,6 +97,7 @@
                         <select id="mode" class="bg-white border border-indigo-200 text-sm rounded-lg focus:ring-indigo-500 focus:border-indigo-500 block p-2 outline-none">
                             <option value="flower">🌸 種花路線 (8點繞圈)</option>
                             <option value="flower-return">🔄 繞圈後回中心點</option>
+                            <option value="flower-double">🎯 雙層繞圈 (外圈+內圈)</option>
                             <option value="direct">➡️ 一般路線 (點對點直連)</option>
                         </select>
                     </div>
@@ -50,7 +106,7 @@
                         <input type="number" id="radius" value="30" class="bg-white border border-indigo-200 text-sm rounded-lg focus:ring-indigo-500 focus:border-indigo-500 block w-24 p-2 text-center outline-none">
                     </div>
                     <div class="flex items-center justify-between">
-                        <label class="text-sm font-medium text-indigo-900">最佳化路線排序</label>
+                        <label class="text-sm font-medium text-indigo-900" title="開啟後將無視你排好的順序，自動尋找最近的點">最佳化路線排序</label>
                         <label class="relative inline-flex items-center cursor-pointer">
                             <input type="checkbox" id="optimize" class="sr-only peer">
                             <div class="w-11 h-6 bg-slate-200 peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-indigo-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-indigo-600"></div>
@@ -95,9 +151,193 @@
     </div>
 
     <script>
+        /* ================= 地圖初始化與管理 ================= */
+        let map;
+        let currentTileLayer;
+        let routeLayerGroup;
+        
+        // 底圖網址設定
+        const mapLayers = {
+            'google_streets': 'https://mt1.google.com/vt/lyrs=m&x={x}&y={y}&z={z}',
+            'google_satellite': 'https://mt1.google.com/vt/lyrs=s&x={x}&y={y}&z={z}',
+            'osm': 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png'
+        };
+
+        function initMap() {
+            // 預設中心點 (台灣)
+            map = L.map('map').setView([23.96, 121.59], 15);
+            
+            // 加入預設底圖 (Google 街道圖)
+            currentTileLayer = L.tileLayer(mapLayers['google_streets'], {
+                maxZoom: 20,
+                attribution: '&copy; Google Maps'
+            }).addTo(map);
+
+            routeLayerGroup = L.layerGroup().addTo(map);
+        }
+
+        function changeMapLayer(layerName) {
+            if(currentTileLayer) map.removeLayer(currentTileLayer);
+            currentTileLayer = L.tileLayer(mapLayers[layerName], {
+                maxZoom: 20,
+                attribution: layerName.includes('google') ? '&copy; Google Maps' : '&copy; OpenStreetMap'
+            }).addTo(map);
+        }
+
+        // 畫出地圖上的標記與路線
+        function drawMap(inputPoints, outputPoints) {
+            if (!map) return;
+            routeLayerGroup.clearLayers();
+
+            if (inputPoints.length === 0) return;
+
+            const bounds = [];
+
+            // 1. 畫出實際產生的路線 (藍色線條)
+            if (outputPoints.length > 0) {
+                const latlngs = outputPoints.map(p => [p.lat, p.lon]);
+                L.polyline(latlngs, { color: '#3b82f6', weight: 4, opacity: 0.8 }).addTo(routeLayerGroup);
+                
+                // 起點標示 (綠色小圓點)
+                L.circleMarker(latlngs[0], { radius: 6, color: '#10b981', fillColor: '#10b981', fillOpacity: 1 }).addTo(routeLayerGroup).bindTooltip("路線起點");
+            }
+
+            // 2. 畫出使用者輸入的中心點 (帶有排序編號)
+            inputPoints.forEach((pt, index) => {
+                const myIcon = L.divIcon({
+                    className: 'custom-div-icon',
+                    html: `${index + 1}`,
+                    iconSize: [24, 24],
+                    iconAnchor: [12, 12]
+                });
+                
+                const marker = L.marker([pt.lat, pt.lon], { icon: myIcon }).addTo(routeLayerGroup);
+                bounds.push([pt.lat, pt.lon]);
+            });
+
+            // 自動縮放地圖以包含所有點
+            if (bounds.length > 0) {
+                map.fitBounds(bounds, { padding: [50, 50] });
+            }
+        }
+
+
+        /* ================= 拖曳排序管理 ================= */
+        let sortableInstance = null;
+
+        function switchInputMode(mode) {
+            const tabText = document.getElementById('tab-text');
+            const tabList = document.getElementById('tab-list');
+            const textarea = document.getElementById('input-coords');
+            const listContainer = document.getElementById('list-container');
+
+            if (mode === 'list') {
+                // 切換到清單模式
+                tabText.classList.replace('bg-white', 'hover:text-slate-700');
+                tabText.classList.replace('shadow-sm', 'bg-transparent');
+                tabText.classList.replace('text-indigo-600', 'text-slate-500');
+                
+                tabList.classList.replace('text-slate-500', 'text-indigo-600');
+                tabList.classList.replace('hover:text-slate-700', 'bg-white');
+                tabList.classList.add('shadow-sm');
+
+                textarea.classList.add('hidden');
+                listContainer.classList.remove('hidden');
+
+                // 從 textarea 讀取資料並渲染清單
+                renderSortableList();
+            } else {
+                // 切換到文字模式
+                tabList.classList.replace('bg-white', 'hover:text-slate-700');
+                tabList.classList.remove('shadow-sm');
+                tabList.classList.replace('text-indigo-600', 'text-slate-500');
+                
+                tabText.classList.replace('text-slate-500', 'text-indigo-600');
+                tabText.classList.replace('hover:text-slate-700', 'bg-white');
+                tabText.classList.add('shadow-sm');
+
+                listContainer.classList.add('hidden');
+                textarea.classList.remove('hidden');
+            }
+        }
+
+        // 將 textarea 轉換為拖曳清單
+        function renderSortableList() {
+            const inputCoords = parseTextarea();
+            const listEl = document.getElementById('sortable-list');
+            const msgEl = document.getElementById('empty-list-msg');
+            
+            listEl.innerHTML = '';
+            
+            if (inputCoords.length === 0) {
+                msgEl.classList.remove('hidden');
+                return;
+            }
+            msgEl.classList.add('hidden');
+
+            inputCoords.forEach((pt, index) => {
+                const li = document.createElement('li');
+                li.className = "flex items-center gap-3 p-3 bg-white border border-slate-200 rounded-lg shadow-sm cursor-grab group";
+                li.dataset.lat = pt.lat;
+                li.dataset.lon = pt.lon;
+                li.innerHTML = `
+                    <div class="text-slate-400 group-hover:text-indigo-500">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="8" x2="8" y1="6" y2="6"/><line x1="16" x2="16" y1="6" y2="6"/><line x1="8" x2="8" y1="12" y2="12"/><line x1="16" x2="16" y1="12" y2="12"/><line x1="8" x2="8" y1="18" y2="18"/><line x1="16" x2="16" y1="18" y2="18"/></svg>
+                    </div>
+                    <div class="flex-shrink-0 w-6 h-6 rounded-full bg-slate-100 text-slate-600 flex items-center justify-center text-xs font-bold point-index">
+                        ${index + 1}
+                    </div>
+                    <div class="font-mono text-sm text-slate-700 w-full flex justify-between">
+                        <span>${pt.lat.toFixed(6)}</span>
+                        <span class="text-slate-300">,</span>
+                        <span>${pt.lon.toFixed(6)}</span>
+                    </div>
+                    <button onclick="removePoint(this)" class="text-slate-300 hover:text-red-500 transition px-2">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+                    </button>
+                `;
+                listEl.appendChild(li);
+            });
+
+            // 初始化或重新實例化 SortableJS
+            if (sortableInstance) sortableInstance.destroy();
+            sortableInstance = new Sortable(listEl, {
+                animation: 150,
+                ghostClass: 'sortable-ghost',
+                onEnd: function () {
+                    syncListToTextarea();
+                }
+            });
+        }
+
+        // 將拖曳清單的結果同步回 textarea，並重新整理序號
+        function syncListToTextarea() {
+            const listEl = document.getElementById('sortable-list');
+            const items = listEl.querySelectorAll('li');
+            let newText = [];
+            
+            items.forEach((item, index) => {
+                // 更新畫面上的圓圈編號
+                item.querySelector('.point-index').innerText = index + 1;
+                newText.push(`${item.dataset.lat}, ${item.dataset.lon}`);
+            });
+            
+            document.getElementById('input-coords').value = newText.join('\n');
+            generateRoute(); // 同步觸發計算與地圖更新
+        }
+
+        // 刪除單個點
+        window.removePoint = function(btn) {
+            btn.closest('li').remove();
+            syncListToTextarea();
+        };
+
+
+        /* ================= 核心計算邏輯 ================= */
+        
         // 經緯度位移計算 (Haversine formula 延伸)
         function destinationPoint(lat, lon, distance_m, bearing_deg) {
-            const R = 6378137; // 地球半徑 (公尺)
+            const R = 6378137;
             const lat1 = lat * Math.PI / 180;
             const lon1 = lon * Math.PI / 180;
             const brng = bearing_deg * Math.PI / 180;
@@ -107,58 +347,52 @@
             const lon2 = lon1 + Math.atan2(Math.sin(brng) * Math.sin(distance_m / R) * Math.cos(lat1),
                                          Math.cos(distance_m / R) - Math.sin(lat1) * Math.sin(lat2));
 
-            return {
-                lat: lat2 * 180 / Math.PI,
-                lon: lon2 * 180 / Math.PI
-            };
+            return { lat: lat2 * 180 / Math.PI, lon: lon2 * 180 / Math.PI };
         }
 
-        // 計算兩點之間的距離 (Haversine formula 返回公尺)
         function getDistance(lat1, lon1, lat2, lon2) {
             const R = 6378137;
             const dLat = (lat2 - lat1) * Math.PI / 180;
             const dLon = (lon2 - lon1) * Math.PI / 180;
-            const a = 
-                Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-                Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * Math.sin(dLon / 2) * Math.sin(dLon / 2);
+            const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) + Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * Math.sin(dLon / 2) * Math.sin(dLon / 2);
             const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
             return R * c;
         }
 
+        function parseTextarea() {
+            const inputText = document.getElementById('input-coords').value;
+            const lines = inputText.split('\n').map(l => l.trim()).filter(l => l.length > 0);
+            const coords = [];
+            for (const line of lines) {
+                const parts = line.split(/[,\s\t]+/).filter(p => p.length > 0);
+                if (parts.length >= 2) {
+                    const lat = parseFloat(parts[0]);
+                    const lon = parseFloat(parts[1]);
+                    if (!isNaN(lat) && !isNaN(lon)) coords.push({lat, lon});
+                }
+            }
+            return coords;
+        }
+
         // 主要產生邏輯
         function generateRoute() {
-            const inputText = document.getElementById('input-coords').value;
             const mode = document.getElementById('mode').value;
             const radius = parseFloat(document.getElementById('radius').value) || 30;
             const format = document.getElementById('format').value;
             const optimize = document.getElementById('optimize').checked;
 
-            // 解析輸入座標
-            const lines = inputText.split('\n').map(l => l.trim()).filter(l => l.length > 0);
-            let inputCoords = [];
+            let inputCoords = parseTextarea();
+            const originalInputCoords = [...inputCoords]; // 保留原始順序用於地圖標示
 
-            for (const line of lines) {
-                // 支援多種分隔符號 (逗號、空白、Tab)
-                const parts = line.split(/[,\s\t]+/).filter(p => p.length > 0);
-                if (parts.length >= 2) {
-                    const lat = parseFloat(parts[0]);
-                    const lon = parseFloat(parts[1]);
-                    if (!isNaN(lat) && !isNaN(lon)) {
-                        inputCoords.push({lat, lon});
-                    }
-                }
-            }
-
-            // 執行路線最佳化 (貪婪演算法：尋找最近的點)
+            // 執行路線最佳化
             if (optimize && inputCoords.length > 1) {
-                const optimizedCoords = [inputCoords[0]]; // 保持第一個點不變當作起點
+                const optimizedCoords = [inputCoords[0]];
                 const unvisited = inputCoords.slice(1);
 
                 while (unvisited.length > 0) {
                     let current = optimizedCoords[optimizedCoords.length - 1];
                     let nearestIdx = 0;
                     let minDistance = Infinity;
-
                     for (let i = 0; i < unvisited.length; i++) {
                         let dist = getDistance(current.lat, current.lon, unvisited[i].lat, unvisited[i].lon);
                         if (dist < minDistance) {
@@ -166,18 +400,16 @@
                             nearestIdx = i;
                         }
                     }
-
                     optimizedCoords.push(unvisited[nearestIdx]);
                     unvisited.splice(nearestIdx, 1);
                 }
-                inputCoords = optimizedCoords; // 替換為排序好的座標陣列
+                inputCoords = optimizedCoords; 
             }
 
             let outputPoints = [];
 
             // 產生路線點
-            if (mode === 'flower' || mode === 'flower-return') {
-                // 新增：在整個路線的最前面，加入一個距離第一個中心點 60 公尺的起始點 (預設放在正北方)
+            if (mode === 'flower' || mode === 'flower-return' || mode === 'flower-double') {
                 if (inputCoords.length > 0) {
                     const firstCenter = inputCoords[0];
                     const entryPoint = destinationPoint(firstCenter.lat, firstCenter.lon, 60, 0);
@@ -185,17 +417,26 @@
                 }
 
                 for (const center of inputCoords) {
-                    const sides = 8; // 八角形
+                    const sides = 8;
                     const loopPoints = [];
-                    // 為了盡量符合原版的起始角度，我們從 0 度(正北)開始順時針畫八角形
                     for (let i = 0; i < sides; i++) {
                         const bearing = i * (360 / sides);
                         loopPoints.push(destinationPoint(center.lat, center.lon, radius, bearing));
                     }
-                    loopPoints.push(loopPoints[0]); // 繞回原點形成封閉迴圈
+                    loopPoints.push(loopPoints[0]); 
                     outputPoints.push(...loopPoints);
 
-                    // 如果是「繞圈後回中心點」模式，在繞完八角形後把中心點加進去
+                    if (mode === 'flower-double') {
+                        const innerLoopPoints = [];
+                        const innerRadius = radius / 2; 
+                        for (let i = 0; i < sides; i++) {
+                            const bearing = i * (360 / sides);
+                            innerLoopPoints.push(destinationPoint(center.lat, center.lon, innerRadius, bearing));
+                        }
+                        innerLoopPoints.push(innerLoopPoints[0]);
+                        outputPoints.push(...innerLoopPoints);
+                    }
+
                     if (mode === 'flower-return') {
                         outputPoints.push({ lat: center.lat, lon: center.lon });
                     }
@@ -210,41 +451,32 @@
                 result = outputPoints.map(p => `${p.lat.toFixed(7)}, ${p.lon.toFixed(7)}`).join('\n');
             } else {
                 const trkpts = outputPoints.map(p => `    <trkpt lat="${p.lat.toFixed(7)}" lon="${p.lon.toFixed(7)}"></trkpt>`).join('\n');
-                result = `<?xml version="1.0" encoding="UTF-8"?>
-<gpx version="1.1" creator="flower-route-generator">
-  <metadata><name>種花版_${new Date().toISOString().slice(5,16).replace(/[-T:]/g,'')}</name></metadata>
-  <trk><name>種花路線</name><trkseg>
-${trkpts}
-  </trkseg></trk>
-</gpx>`;
+                result = `<?xml version="1.0" encoding="UTF-8"?>\n<gpx version="1.1" creator="flower-route-generator">\n  <metadata><name>種花版_${new Date().toISOString().slice(5,16).replace(/[-T:]/g,'')}</name></metadata>\n  <trk><name>種花路線</name><trkseg>\n${trkpts}\n  </trkseg></trk>\n</gpx>`;
             }
 
             // 更新 UI
             document.getElementById('output-result').value = result;
             document.getElementById('point-count').textContent = `共 ${outputPoints.length} 個點`;
+            
+            // 更新地圖 (傳入"實際要走的中心點順序"以及"產生的路線點")
+            drawMap(optimize ? inputCoords : originalInputCoords, outputPoints);
         }
 
-        // 複製功能
+        /* ================= 匯出與其他功能 ================= */
         function copyResult() {
             const textarea = document.getElementById('output-result');
             textarea.select();
             document.execCommand('copy');
-            
-            // 顯示提示
             const toast = document.getElementById('toast');
             toast.style.opacity = '1';
-            setTimeout(() => {
-                toast.style.opacity = '0';
-            }, 2000);
+            setTimeout(() => toast.style.opacity = '0', 2000);
         }
 
-        // 下載功能
         function downloadFile() {
             const content = document.getElementById('output-result').value;
             const format = document.getElementById('format').value;
             const extension = format === 'gpx' ? 'gpx' : 'txt';
             const timestamp = new Date().toISOString().slice(5,16).replace(/[-T:]/g,'');
-            
             const blob = new Blob([content], { type: 'text/plain' });
             const url = URL.createObjectURL(blob);
             const a = document.createElement('a');
@@ -256,15 +488,18 @@ ${trkpts}
             URL.revokeObjectURL(url);
         }
 
-        // 綁定事件：當輸入或設定改變時，自動重新計算
+        // 綁定事件
         document.getElementById('input-coords').addEventListener('input', generateRoute);
         document.getElementById('mode').addEventListener('change', generateRoute);
         document.getElementById('radius').addEventListener('input', generateRoute);
         document.getElementById('optimize').addEventListener('change', generateRoute);
         document.getElementById('format').addEventListener('change', generateRoute);
 
-        // 初始執行一次
-        generateRoute();
+        // 初始化
+        window.onload = function() {
+            initMap();
+            generateRoute();
+        };
     </script>
 </body>
 </html>
